@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0" />
+  <title>National Peanut Festival 3D Midway</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    
+    /* Touch Controls Overlay */
+    #joystick-zone {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      width: 120px;
+      height: 120px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      z-index: 10;
+    }
+    #joystick-knob {
+      position: absolute;
+      top: 35px;
+      left: 35px;
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 200, 0, 0.8);
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+
+    /* Ride Interaction UI */
+    #interaction-ui {
+      display: none;
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+    }
+    .ride-btn {
+      background: #ffcc00;
+      color: #000;
+      border: 3px solid #cc0000;
+      padding: 14px 28px;
+      font-size: 18px;
+      font-weight: bold;
+      border-radius: 30px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .ride-btn:active {
+      transform: scale(0.95);
+      background: #e6b800;
+    }
+
+    /* Black and White Modal Warning */
+    #no-money-modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #000000;
+      color: #ffffff;
+      border: 3px solid #ffffff;
+      padding: 24px 32px;
+      border-radius: 12px;
+      font-size: 20px;
+      font-weight: bold;
+      text-align: center;
+      z-index: 30;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.9);
+      width: 80%;
+      max-width: 340px;
+      letter-spacing: 0.5px;
+    }
+    
+    /* Onscreen Instructions */
+    #instructions {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      color: white;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      z-index: 10;
+      pointer-events: none;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    /* Minimap Canvas Container */
+    #minimap-container {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 120px;
+      height: 120px;
+      background: rgba(0, 0, 0, 0.75);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      border-radius: 50%;
+      overflow: hidden;
+      z-index: 10;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    #minimap {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+  <!-- Three.js Library -->
+  <script src="three.min.js"></script>
+</head>
+<body>
+
+  <div id="instructions">Left Side: Walk | Right Side: Drag Look</div>
+  <div id="canvas-container"></div>
+  
+  <div id="minimap-container">
+    <canvas id="minimap" width="120" height="120"></canvas>
+  </div>
+
+  <div id="joystick-zone">
+    <div id="joystick-knob"></div>
+  </div>
+
+  <div id="interaction-ui">
+    <button class="ride-btn" id="ride-trigger-btn">CLICK HERE TO RIDE</button>
+  </div>
+
+  <div id="no-money-modal">
+    Boy you ain't got no money
+  </div>
+
+  <script>
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a0933); // Evening fair ground atmosphere
+    scene.fog = new THREE.FogExp2(0x1a0933, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 0.8);
+    dirLight.position.set(40, 60, 20);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 150;
+    const d = 50;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    scene.add(dirLight);
+
+    // Dynamic Carnival Colored Lights
+    const pinkLight = new THREE.PointLight(0xff007f, 2, 40);
+    pinkLight.position.set(0, 10, 40);
+    scene.add(pinkLight);
+
+    const cyanLight = new THREE.PointLight(0x00f3ff, 2, 40);
+    cyanLight.position.set(0, 10, 70);
+    scene.add(cyanLight);
+
+    // Ground & Fence
+    const groundGeo = new THREE.PlaneGeometry(200, 200);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const fenceMat = new THREE.MeshStandardMaterial({ color: 0x888888, wireframe: true });
+    const fenceGeo = new THREE.BoxGeometry(200, 4, 1);
+    
+    const fenceBack = new THREE.Mesh(fenceGeo, fenceMat);
+    fenceBack.position.set(0, 2, -100);
+    scene.add(fenceBack);
+    
+    const fenceLeft = new THREE.Mesh(fenceGeo, fenceMat);
+    fenceLeft.rotation.y = Math.PI / 2;
+    fenceLeft.position.set(-100, 2, 0);
+    scene.add(fenceLeft);
+
+    const fenceRight = new THREE.Mesh(fenceGeo, fenceMat);
+    fenceRight.rotation.y = Math.PI / 2;
+    fenceRight.position.set(100, 2, 0);
+    scene.add(fenceRight);
+
+    const fenceFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(85, 4, 1), fenceMat);
+    fenceFrontLeft.position.set(-57.5, 2, 100);
+    scene.add(fenceFrontLeft);
+
+    const fenceFrontRight = new THREE.Mesh(new THREE.BoxGeometry(85, 4, 1), fenceMat);
+    fenceFrontRight.position.set(57.5, 2, 100);
+    scene.add(fenceFrontRight);
+
+    const minimapDots = [];
+
+    function createEntranceArch() {
+      const archGroup = new THREE.Group();
+      archGroup.position.set(0, 0, 100);
+
+      const pillarMat = new THREE.MeshStandardMaterial({ color: 0xcc0000 });
+      const pillarGeo = new THREE.BoxGeometry(3, 12, 3);
+
+      const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
+      leftPillar.position.set(-12, 6, 0);
+      leftPillar.castShadow = true;
+      archGroup.add(leftPillar);
+
+      const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
+      rightPillar.position.set(12, 6, 0);
+      rightPillar.castShadow = true;
+      archGroup.add(rightPillar);
+
+      const signGeo = new THREE.BoxGeometry(30, 5, 1);
+      const signMat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
+      const sign = new THREE.Mesh(signGeo, signMat);
+      sign.position.set(0, 13, 0);
+      archGroup.add(sign);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffcc00';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#cc0000';
+      ctx.font = 'Bold 28px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('NATIONAL PEANUT', 256, 52);
+      ctx.fillText('FESTIVAL', 256, 92);
+
+      const textTex = new THREE.CanvasTexture(canvas);
+      const textGeo = new THREE.PlaneGeometry(28, 4.5);
+      const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true });
+      const textMesh = new THREE.Mesh(textGeo, textMat);
+      textMesh.position.set(0, 13, 0.6);
+      archGroup.add(textMesh);
+
+      scene.add(archGroup);
+
+      minimapDots.push({ x: 0, z: 100, color: '#00ffcc', radius: 4 });
+    }
+    createEntranceArch();
+
+    const rideInteractiveNodes = [];
+
+    // Ferris Wheel
+    let ferrisWheelWheelGroup;
+    function createFerrisWheel(x, z) {
+      const fwGroup = new THREE.Group();
+      fwGroup.position.set(x, 0, z);
+
+      const structureMat = new THREE.MeshStandardMaterial({ color: 0x0088ff, metalness: 0.5 });
+      
+      const legGeo = new THREE.CylinderGeometry(0.5, 0.8, 30);
+      const leg1 = new THREE.Mesh(legGeo, structureMat);
+      leg1.position.set(-8, 14, 0);
+      leg1.rotation.z = -0.25;
+      fwGroup.add(leg1);
+
+      const leg2 = new THREE.Mesh(legGeo, structureMat);
+      leg2.position.set(8, 14, 0);
+      leg2.rotation.z = 0.25;
+      fwGroup.add(leg2);
+
+      ferrisWheelWheelGroup = new THREE.Group();
+      ferrisWheelWheelGroup.position.set(0, 26, 0);
+
+      const rimGeo = new THREE.TorusGeometry(18, 0.6, 8, 32);
+      const rimMat = new THREE.MeshStandardMaterial({ color: 0xff0055 });
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      ferrisWheelWheelGroup.add(rim);
+
+      const cartGeo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
+      const numCarts = 12;
+      for (let i = 0; i < numCarts; i++) {
+        const angle = (i / numCarts) * Math.PI * 2;
+        const spokeGeo = new THREE.CylinderGeometry(0.1, 0.1, 18);
+        const spoke = new THREE.Mesh(spokeGeo, structureMat);
+        spoke.position.set(Math.sin(angle) * 9, Math.cos(angle) * 9, 0);
+        spoke.rotation.z = -angle;
+        ferrisWheelWheelGroup.add(spoke);
+
+        const cartMat = new THREE.MeshStandardMaterial({ color: (i % 2 === 0) ? 0xffff00 : 0x00ffcc });
+        const cart = new THREE.Mesh(cartGeo, cartMat);
+        cart.position.set(Math.sin(angle) * 18, Math.cos(angle) * 18, 0);
+        ferrisWheelWheelGroup.add(cart);
+      }
+
+      fwGroup.add(ferrisWheelWheelGroup);
+
+      createTicketBooth(fwGroup, 0, 10, "FERRIS WHEEL", "Boy you ain't got no money");
+
+      scene.add(fwGroup);
+      minimapDots.push({ x: x, z: z, color: '#ff0055', radius: 5 });
+    }
+
+    // Drop Tower with Animated Carriage
+    let dropCarriageMesh;
+    const DROP_TOWER_MIN_Y = 5;
+    const DROP_TOWER_MAX_Y = 44;
+
+    function createDropTower(x, z) {
+      const dtGroup = new THREE.Group();
+      dtGroup.position.set(x, 0, z);
+
+      // Central Column Tower
+      const towerGeo = new THREE.BoxGeometry(4, 50, 4);
+      const towerMat = new THREE.MeshStandardMaterial({ color: 0xff3300 });
+      const tower = new THREE.Mesh(towerGeo, towerMat);
+      tower.position.y = 25;
+      dtGroup.add(tower);
+
+      // Large Square Carriage Drop Ride Unit
+      const carriageGeo = new THREE.BoxGeometry(8, 4, 8);
+      const carriageMat = new THREE.MeshStandardMaterial({ color: 0xffff00, metalness: 0.3, roughness: 0.2 });
+      dropCarriageMesh = new THREE.Mesh(carriageGeo, carriageMat);
+      dropCarriageMesh.position.y = DROP_TOWER_MIN_Y;
+      dropCarriageMesh.castShadow = true;
+      dtGroup.add(dropCarriageMesh);
+
+      createTicketBooth(dtGroup, 0, 10, "MEGA DROP", "Nah");
+
+      scene.add(dtGroup);
+      minimapDots.push({ x: x, z: z, color: '#ff3300', radius: 4 });
+    }
+
+    function createTicketBooth(parentGroup, relX, relZ, rideName, promptMessage) {
+      const boothGroup = new THREE.Group();
+      boothGroup.position.set(relX, 0, relZ);
+
+      const boothGeo = new THREE.BoxGeometry(4, 4, 4);
+      const boothMat = new THREE.MeshStandardMaterial({ color: 0x22aa33 });
+      const booth = new THREE.Mesh(boothGeo, boothMat);
+      booth.position.y = 2;
+      booth.castShadow = true;
+      boothGroup.add(booth);
+
+      const roofGeo = new THREE.ConeGeometry(3.5, 2, 4);
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0xcc0000 });
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.y = 5;
+      roof.rotation.y = Math.PI / 4;
+      boothGroup.add(roof);
+
+      parentGroup.add(boothGroup);
+
+      const worldPos = new THREE.Vector3();
+      boothGroup.getWorldPosition(worldPos);
+
+      rideInteractiveNodes.push({
+        position: worldPos,
+        radius: 6.0,
+        name: rideName,
+        message: promptMessage
+      });
+
+      minimapDots.push({ x: worldPos.x, z: worldPos.z, color: '#00ff00', radius: 3 });
+    }
+
+    createFerrisWheel(-35, 20);
+    createDropTower(35, 20);
+
+    function createTent(x, z, color) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const baseGeo = new THREE.BoxGeometry(8, 4, 8);
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 2;
+      group.add(base);
+
+      const roofGeo = new THREE.ConeGeometry(7, 4, 4);
+      const roofMat = new THREE.MeshStandardMaterial({ color: color });
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.y = 6;
+      roof.rotation.y = Math.PI / 4;
+      group.add(roof);
+
+      scene.add(group);
+      minimapDots.push({ x: x, z: z, color: '#ffff00', radius: 3 });
+    }
+
+    createTent(-15, 60, 0xaa00bb); 
+    createTent(15, 60, 0x00bbbb);  
+
+    const player = new THREE.Group();
+    player.position.set(0, 0, 115);
+    scene.add(player);
+
+    function createLittleDude() {
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0055ff }); 
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 }); 
+      const pantsMat = new THREE.MeshStandardMaterial({ color: 0x333333 }); 
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 0.8), bodyMat);
+      torso.position.y = 1.6;
+      torso.castShadow = true;
+      player.add(torso);
+
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), skinMat);
+      head.position.y = 2.75;
+      head.castShadow = true;
+      player.add(head);
+
+      const hat = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.3, 1.1), new THREE.MeshStandardMaterial({ color: 0xcc0000 }));
+      hat.position.set(0, 3.2, 0.1);
+      player.add(hat);
+
+      const legGeo = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+      const legL = new THREE.Mesh(legGeo, pantsMat);
+      legL.position.set(-0.35, 0.5, 0);
+      player.add(legL);
+
+      const legR = new THREE.Mesh(legGeo, pantsMat);
+      legR.position.set(0.35, 0.5, 0);
+      player.add(legR);
+    }
+    createLittleDude();
+
+    let touchMoveVector = new THREE.Vector2(0, 0);
+    let cameraRotationYaw = 0;
+    let cameraRotationPitch = 0.3;
+    
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickKnob = document.getElementById('joystick-knob');
+    let joystickTouchId = null;
+    let joystickCenter = { x: 0, y: 0 };
+
+    let lookTouchId = null;
+    let lastLookTouchX = 0;
+    let lastLookTouchY = 0;
+
+    window.addEventListener('touchstart', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        
+        if (touch.clientX < window.innerWidth / 2 && joystickTouchId === null) {
+          joystickTouchId = touch.identifier;
+          const rect = joystickZone.getBoundingClientRect();
+          joystickCenter = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+          };
+          updateJoystick(touch);
+        }
+        else if (touch.clientX >= window.innerWidth / 2 && lookTouchId === null) {
+          lookTouchId = touch.identifier;
+          lastLookTouchX = touch.clientX;
+          lastLookTouchY = touch.clientY;
+        }
+      }
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        
+        if (touch.identifier === joystickTouchId) {
+          updateJoystick(touch);
+        } else if (touch.identifier === lookTouchId) {
+          const deltaX = touch.clientX - lastLookTouchX;
+          const deltaY = touch.clientY - lastLookTouchY;
+
+          cameraRotationYaw -= deltaX * 0.005;
+          cameraRotationPitch += deltaY * 0.005;
+          cameraRotationPitch = Math.max(-0.2, Math.min(1.2, cameraRotationPitch));
+
+          lastLookTouchX = touch.clientX;
+          lastLookTouchY = touch.clientY;
+        }
+      }
+    });
+
+    const resetJoystick = () => {
+      joystickTouchId = null;
+      touchMoveVector.set(0, 0);
+      joystickKnob.style.left = '35px';
+      joystickKnob.style.top = '35px';
+    };
+
+    window.addEventListener('touchend', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === joystickTouchId) resetJoystick();
+        if (touch.identifier === lookTouchId) lookTouchId = null;
+      }
+    });
+
+    function updateJoystick(touch) {
+      const maxRadius = 40;
+      let dx = touch.clientX - joystickCenter.x;
+      let dy = touch.clientY - joystickCenter.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > maxRadius) {
+        dx = (dx / dist) * maxRadius;
+        dy = (dy / dist) * maxRadius;
+      }
+
+      joystickKnob.style.left = `${35 + dx}px`;
+      joystickKnob.style.top = `${35 + dy}px`;
+
+      touchMoveVector.set(dx / maxRadius, dy / maxRadius);
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', (e) => keys[e.code] = true);
+    window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+    let isMouseDown = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    window.addEventListener('mousedown', (e) => {
+      if (e.clientX >= window.innerWidth / 2) {
+        isMouseDown = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+      }
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (isMouseDown) {
+        const deltaX = e.clientX - lastMouseX;
+        const deltaY = e.clientY - lastMouseY;
+        cameraRotationYaw -= deltaX * 0.005;
+        cameraRotationPitch += deltaY * 0.005;
+        cameraRotationPitch = Math.max(-0.2, Math.min(1.2, cameraRotationPitch));
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+      }
+    });
+    window.addEventListener('mouseup', () => isMouseDown = false);
+
+    const interactionUI = document.getElementById('interaction-ui');
+    const rideBtn = document.getElementById('ride-trigger-btn');
+    const modal = document.getElementById('no-money-modal');
+    let currentActiveRide = null;
+
+    rideBtn.addEventListener('click', () => {
+      if (currentActiveRide) {
+        modal.innerText = currentActiveRide.message;
+        modal.style.display = 'block';
+        setTimeout(() => {
+          modal.style.display = 'none';
+        }, 2500);
+      }
+    });
+
+    function checkProximity() {
+      currentActiveRide = null;
+      const playerPos = player.position;
+
+      for (let node of rideInteractiveNodes) {
+        const dist = playerPos.distanceTo(node.position);
+        if (dist < node.radius) {
+          currentActiveRide = node;
+          break;
+        }
+      }
+
+      if (currentActiveRide) {
+        interactionUI.style.display = 'block';
+      } else {
+        interactionUI.style.display = 'none';
+      }
+    }
+
+    const minimapCanvas = document.getElementById('minimap');
+    const minimapCtx = minimapCanvas.getContext('2d');
+
+    function drawMinimap() {
+      const w = minimapCanvas.width;
+      const h = minimapCanvas.height;
+      const scale = w / 220;
+      const centerX = w / 2;
+      const centerY = h / 2;
+
+      minimapCtx.clearRect(0, 0, w, h);
+
+      minimapCtx.fillStyle = 'rgba(20, 20, 25, 0.9)';
+      minimapCtx.beginPath();
+      minimapCtx.arc(centerX, centerY, w/2 - 2, 0, Math.PI * 2);
+      minimapCtx.fill();
+
+      const pulse = (Math.sin(Date.now() * 0.005) + 1) / 2;
+      for (let dot of minimapDots) {
+        const mapX = centerX + dot.x * scale;
+        const mapY = centerY + dot.z * scale;
+
+        minimapCtx.fillStyle = dot.color;
+        minimapCtx.shadowColor = dot.color;
+        minimapCtx.shadowBlur = 4 + pulse * 6;
+        minimapCtx.beginPath();
+        minimapCtx.arc(mapX, mapY, dot.radius, 0, Math.PI * 2);
+        minimapCtx.fill();
+      }
+      minimapCtx.shadowBlur = 0;
+
+      const playerMapX = centerX + player.position.x * scale;
+      const playerMapY = centerY + player.position.z * scale;
+
+      minimapCtx.fillStyle = '#ffffff';
+      minimapCtx.shadowColor = '#ffffff';
+      minimapCtx.shadowBlur = 8;
+      minimapCtx.beginPath();
+      minimapCtx.arc(playerMapX, playerMapY, 4, 0, Math.PI * 2);
+      minimapCtx.fill();
+
+      minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      minimapCtx.lineWidth = 2;
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(playerMapX, playerMapY);
+      minimapCtx.lineTo(
+        playerMapX - Math.sin(player.rotation.y) * 10,
+        playerMapY - Math.cos(player.rotation.y) * 10
+      );
+      minimapCtx.stroke();
+      minimapCtx.shadowBlur = 0;
+    }
+
+    const clock = new THREE.Clock();
+    let dropTowerTimer = 0;
+
+    function updateDropTowerAnimation(delta) {
+      if (!dropCarriageMesh) return;
+
+      // Cycle duration 6 seconds total
+      dropTowerTimer = (dropTowerTimer + delta) % 6.0;
+
+      if (dropTowerTimer < 3.5) {
+        // Slow rise up (0.0 to 3.5 seconds)
+        const progress = dropTowerTimer / 3.5;
+        dropCarriageMesh.position.y = THREE.MathUtils.lerp(DROP_TOWER_MIN_Y, DROP_TOWER_MAX_Y, progress);
+      } else if (dropTowerTimer < 4.2) {
+        // Pause briefly at top (3.5 to 4.2 seconds)
+        dropCarriageMesh.position.y = DROP_TOWER_MAX_Y;
+      } else if (dropTowerTimer < 4.7) {
+        // Fast drop down with acceleration quadratic easing (4.2 to 4.7 seconds)
+        const progress = (dropTowerTimer - 4.2) / 0.5;
+        const easeInQuad = progress * progress;
+        dropCarriageMesh.position.y = THREE.MathUtils.lerp(DROP_TOWER_MAX_Y, DROP_TOWER_MIN_Y, easeInQuad);
+      } else {
+        // Rest at base before restarting cycle (4.7 to 6.0 seconds)
+        dropCarriageMesh.position.y = DROP_TOWER_MIN_Y;
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+
+      // Ferris Wheel Rotation
+      if (ferrisWheelWheelGroup) {
+        ferrisWheelWheelGroup.rotation.z += delta * 0.2;
+      }
+
+      // Animated Drop Tower
+      updateDropTowerAnimation(delta);
+
+      // Player Movement Logic
+      let moveX = touchMoveVector.x;
+      let moveZ = touchMoveVector.y;
+
+      if (keys['KeyA'] || keys['ArrowLeft']) moveX = -1;
+      if (keys['KeyD'] || keys['ArrowRight']) moveX = 1;
+      if (keys['KeyW'] || keys['ArrowUp']) moveZ = -1;
+      if (keys['KeyS'] || keys['ArrowDown']) moveZ = 1;
+
+      const inputLength = Math.hypot(moveX, moveZ);
+
+      if (inputLength > 0.1) {
+        const moveAngle = Math.atan2(moveX, moveZ) + cameraRotationYaw;
+        const speed = 12.0 * delta;
+
+        player.position.x += Math.sin(moveAngle) * speed;
+        player.position.z += Math.cos(moveAngle) * speed;
+
+        player.rotation.y = moveAngle;
+      }
+
+      player.position.x = Math.max(-95, Math.min(95, player.position.x));
+      player.position.z = Math.max(-95, Math.min(120, player.position.z));
+
+      // Third-Person Camera Position
+      const camDistance = 15;
+      const horizontalDist = camDistance * Math.cos(cameraRotationPitch);
+      const verticalDist = camDistance * Math.sin(cameraRotationPitch);
+
+      const camOffset = new THREE.Vector3(
+        Math.sin(cameraRotationYaw) * horizontalDist,
+        Math.max(2, verticalDist + 3),
+        Math.cos(cameraRotationYaw) * horizontalDist
+      );
+
+      camera.position.copy(player.position).add(camOffset);
+      camera.lookAt(player.position.x, player.position.y + 2, player.position.z);
+
+      checkProximity();
+      drawMinimap();
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
